@@ -1,7 +1,9 @@
 mod openai;
 mod db;
-mod pdf_render;
+mod embed_sidecar;
 mod ingest;
+mod pdf_render;
+mod selection_map;
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -66,13 +68,62 @@ fn list_book_pages(
     let rows = db::list_pages_preview(&conn, &book_id).map_err(|e| e.to_string())?;
     Ok(rows
         .into_iter()
-        .map(|(page_num, preview)| {
+        .map(|(page_num, preview, has_embedding)| {
             serde_json::json!({
                 "pageNum": page_num,
                 "preview": preview,
+                "hasEmbedding": has_embedding,
             })
         })
         .collect())
+}
+
+#[tauri::command]
+fn map_selection_to_latex(
+    book_id: String,
+    page_num: i32,
+    selection_text: String,
+    state: tauri::State<'_, DbState>,
+) -> Result<Option<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let latex = db::get_page_latex(&conn, &book_id, page_num).map_err(|e| e.to_string())?;
+    let Some(l) = latex.filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    Ok(selection_map::map_selection_to_excerpt(&l, &selection_text, 500))
+}
+
+#[tauri::command]
+fn sample_linear_algebra_pdf() -> Result<String, String> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or_else(|| "manifest parent".to_string())?
+        .join("text_linear_algebra.pdf");
+    if !p.is_file() {
+        return Err(format!(
+            "リポジトリ直下に text_linear_algebra.pdf がありません: {:?}",
+            p
+        ));
+    }
+    p.canonicalize()
+        .map(|c| c.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn embed_book_pages(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, DbState>,
+    book_id: String,
+) -> Result<usize, String> {
+    let script = embed_sidecar::embedder_script_path()?;
+    let db_arc = db.0.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        embed_sidecar::embed_all_missing(&db_arc, &book_id, &script, &app2)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -196,6 +247,9 @@ pub fn run() {
             pick_pdf,
             upsert_page_latex,
             list_book_pages,
+            map_selection_to_latex,
+            sample_linear_algebra_pdf,
+            embed_book_pages,
             start_pdf_ingest,
             cancel_pdf_ingest,
             create_session,

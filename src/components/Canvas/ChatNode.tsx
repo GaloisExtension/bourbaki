@@ -7,6 +7,7 @@ import "./chat-node.css";
 export type ChatNodeData = {
   title: string;
   selectionPreview: string;
+  latexMappedSnippet: string;
   thinkingBadge: string;
   pageLabel: string;
   onSubmit?: (text: string) => void;
@@ -43,6 +44,14 @@ export const ChatNode = memo(function ChatNode({
       <section className="chat-node__ctx">
         <div className="chat-node__ctx-meta">{data.pageLabel}</div>
         <pre className="chat-node__selection">{data.selectionPreview || "（選択なし）"}</pre>
+        {data.latexMappedSnippet ? (
+          <div className="chat-node__latex-map">
+            <div className="chat-node__ctx-meta">LaTeX 対応（推定・取り込み後）</div>
+            <pre className="chat-node__selection chat-node__selection--latexmap">
+              {data.latexMappedSnippet}
+            </pre>
+          </div>
+        ) : null}
       </section>
       <div className="chat-node__preview-row">
         {preview ? (

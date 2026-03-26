@@ -1,0 +1,2 @@
+# 埋め込みパイプライン（pages.embedding）。torch は sentence-transformers が依存解決。
+sentence-transformers>=3.0.0

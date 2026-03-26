@@ -53,6 +53,18 @@
   overflow: auto;
 }
 
+.chat-node__latex-map {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-node__selection--latexmap {
+  max-height: 100px;
+  font-size: 10px;
+  color: #a7f3d0;
+}
+
 .chat-node__preview-row {
   min-height: 36px;
   padding: 8px 12px;

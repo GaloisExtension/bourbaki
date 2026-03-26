@@ -50,3 +50,26 @@ pub fn render_page_png(pdf_path: &Path, page_1based: u32, out_prefix: &Path) -> 
     }
     Ok(png_path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::page_count;
+    use std::path::PathBuf;
+
+    /// リポジトリ直下のサンプル（開発・CI で配置）
+    #[test]
+    fn text_linear_algebra_pdf_page_count() {
+        let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../text_linear_algebra.pdf");
+        assert!(
+            p.is_file(),
+            "テスト用にリポジトリ直下へ text_linear_algebra.pdf を置いてください: {:?}",
+            p
+        );
+        let n = page_count(&p).expect("valid pdf");
+        assert!(
+            n > 8,
+            "サンプル PDF は複数ページ想定です (got {n} pages): {:?}",
+            p
+        );
+    }
+}

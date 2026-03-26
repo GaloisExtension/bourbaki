@@ -168,16 +168,63 @@ fn normalize_concept_type(raw: &str) -> String {
     }
 }
 
-/// ページ一覧（プレビュー用・先頭 200 文字）
-pub fn list_pages_preview(conn: &Connection, book_id: &str) -> SqlResult<Vec<(i32, String)>> {
+pub fn get_page_latex(
+    conn: &Connection,
+    book_id: &str,
+    page_num: i32,
+) -> SqlResult<Option<String>> {
+    let mut stmt =
+        conn.prepare("SELECT latex FROM pages WHERE book_id = ?1 AND page_num = ?2 LIMIT 1")?;
+    let mut rows = stmt.query_map(params![book_id, page_num], |row| row.get::<_, String>(0))?;
+    match rows.next() {
+        Some(Ok(s)) => Ok(Some(s)),
+        Some(Err(e)) => Err(e),
+        None => Ok(None),
+    }
+}
+
+pub fn list_pages_missing_embedding(conn: &Connection, book_id: &str) -> SqlResult<Vec<i32>> {
     let mut stmt = conn.prepare(
-        "SELECT page_num, latex FROM pages WHERE book_id = ?1 ORDER BY page_num ASC",
+        "SELECT page_num FROM pages WHERE book_id = ?1 AND latex != ''
+         AND (embedding IS NULL OR length(embedding) < 16)
+         ORDER BY page_num ASC",
+    )?;
+    let rows = stmt.query_map(params![book_id], |row| row.get::<_, i32>(0))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+pub fn update_page_embedding(
+    conn: &Connection,
+    book_id: &str,
+    page_num: i32,
+    blob: &[u8],
+) -> SqlResult<()> {
+    conn.execute(
+        "UPDATE pages SET embedding = ?1 WHERE book_id = ?2 AND page_num = ?3",
+        params![blob, book_id, page_num],
+    )?;
+    Ok(())
+}
+
+/// ページ一覧（プレビュー用・先頭 200 文字 + 埋め込み有無）
+pub fn list_pages_preview(
+    conn: &Connection,
+    book_id: &str,
+) -> SqlResult<Vec<(i32, String, bool)>> {
+    let mut stmt = conn.prepare(
+        "SELECT page_num, latex, embedding FROM pages WHERE book_id = ?1 ORDER BY page_num ASC",
     )?;
     let rows = stmt.query_map(params![book_id], |row| {
         let num: i32 = row.get(0)?;
         let latex: String = row.get(1)?;
+        let emb: Option<Vec<u8>> = row.get(2)?;
         let preview = latex.chars().take(200).collect::<String>();
-        Ok((num, preview))
+        let has_emb = emb.map(|b| b.len() >= 16).unwrap_or(false);
+        Ok((num, preview, has_emb))
     })?;
     let mut out = Vec::new();
     for r in rows {

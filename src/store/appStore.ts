@@ -12,12 +12,15 @@ export type AppStore = {
   pdfAssetUrl: string | null;
   selectionText: string;
   selectionPage: number | null;
+  /** DB ページ LaTeX から推定した選択スニペット */
+  selectionLatexMapped: string | null;
   sessions: SessionRef[];
   thinkingEnabled: boolean;
   dbPathHint: string | null;
   setBookId: (id: string) => void;
   setPdf: (path: string | null, assetUrl: string | null) => void;
   setSelection: (text: string, page: number | null) => void;
+  setSelectionLatexMapped: (latex: string | null) => void;
   addSession: (s: SessionRef) => void;
   setSessions: (sessions: SessionRef[]) => void;
   setThinkingEnabled: (v: boolean) => void;
@@ -30,6 +33,7 @@ export const useAppStore = create<AppStore>((set) => ({
   pdfAssetUrl: null,
   selectionText: "",
   selectionPage: null,
+  selectionLatexMapped: null,
   sessions: [],
   thinkingEnabled: true,
   dbPathHint: null,
@@ -40,9 +44,12 @@ export const useAppStore = create<AppStore>((set) => ({
       pdfAssetUrl,
       selectionText: "",
       selectionPage: null,
+      selectionLatexMapped: null,
       bookId: pdfPath ? crypto.randomUUID() : st.bookId,
     })),
-  setSelection: (selectionText, selectionPage) => set({ selectionText, selectionPage }),
+  setSelection: (selectionText, selectionPage) =>
+    set({ selectionText, selectionPage, selectionLatexMapped: null }),
+  setSelectionLatexMapped: (selectionLatexMapped) => set({ selectionLatexMapped }),
   addSession: (s) => set((st) => ({ sessions: [s, ...st.sessions] })),
   setSessions: (sessions) => set({ sessions }),
   setThinkingEnabled: (thinkingEnabled) => set({ thinkingEnabled }),

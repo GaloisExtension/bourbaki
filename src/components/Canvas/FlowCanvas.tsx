@@ -21,6 +21,7 @@ type FlowCanvasProps = {
 export function FlowCanvas({ onChatSubmit }: FlowCanvasProps) {
   const selectionText = useAppStore((s) => s.selectionText);
   const selectionPage = useAppStore((s) => s.selectionPage);
+  const latexMappedSnippet = useAppStore((s) => s.selectionLatexMapped ?? "");
   const thinkingEnabled = useAppStore((s) => s.thinkingEnabled);
 
   const nodes: Node<ChatNodeData>[] = useMemo(
@@ -32,6 +33,7 @@ export function FlowCanvas({ onChatSubmit }: FlowCanvasProps) {
         data: {
           title: "ブランチ会話",
           selectionPreview: selectionText,
+          latexMappedSnippet,
           thinkingBadge: thinkingEnabled ? "🧠" : "⚡",
           pageLabel:
             selectionPage != null
@@ -41,7 +43,13 @@ export function FlowCanvas({ onChatSubmit }: FlowCanvasProps) {
         },
       },
     ],
-    [selectionText, selectionPage, thinkingEnabled, onChatSubmit],
+    [
+      selectionText,
+      latexMappedSnippet,
+      selectionPage,
+      thinkingEnabled,
+      onChatSubmit,
+    ],
   );
 
   const edges: Edge[] = useMemo(() => [], []);

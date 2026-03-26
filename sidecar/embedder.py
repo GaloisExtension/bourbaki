@@ -1,14 +1,60 @@
 #!/usr/bin/env python3
 """
-Ruri v3-310m などローカル埋め込み用の予定地（PLAN Phase 4）。
-現状はプレースホルダー — 実装時は HuggingFace / ONNX ランタイムと接続する。
+stdin: 1 行 JSON — {"text": "..."}
+stdout: 1 行 JSON — {"dim": N, "b64": "<f32 little-endian base64>"}
+
+環境変数:
+  MATH_TEACHER_EMBED_MODEL — 既定 intfloat/multilingual-e5-small（日本語可・軽量）
+  フル Ruri に切り替える例: cl-nagoya/ruri-v3-310m（初回 DL 大）
+
+初回実行: pip install -r sidecar/requirements.txt
 """
 
 from __future__ import annotations
 
+import base64
+import json
+import os
+import sys
+
 
 def main() -> None:
-    print("embedder sidecar: not configured (see PLAN.md Phase 4)")
+    line = sys.stdin.readline()
+    if not line:
+        sys.exit(1)
+    obj = json.loads(line)
+    text = obj.get("text") or ""
+    model_name = os.environ.get(
+        "MATH_TEACHER_EMBED_MODEL", "intfloat/multilingual-e5-small"
+    )
+
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as e:
+        print(json.dumps({"error": f"sentence_transformers 未インストール: {e}"}))
+        sys.exit(2)
+
+    try:
+        model = SentenceTransformer(model_name)
+        mlow = model_name.lower()
+        prefix = ""
+        if "e5" in mlow:
+            prefix = "passage: "  # ページ本文をコーパス側として扱う
+        to_encode = prefix + text
+        vec = model.encode(
+            to_encode,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+    except Exception as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(3)
+
+    flat = vec.astype("float32").flatten()
+    raw = flat.tobytes()
+    out = {"dim": int(flat.shape[0]), "b64": base64.b64encode(raw).decode("ascii")}
+    print(json.dumps(out), flush=True)
 
 
 if __name__ == "__main__":

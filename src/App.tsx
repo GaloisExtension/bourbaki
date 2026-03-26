@@ -8,10 +8,13 @@ import { useAppStore } from "./store/appStore";
 import {
   cancelPdfIngest,
   createSession,
+  embedBookPages,
   getPaths,
   listBookPages,
   listSessions,
+  mapSelectionToLatex,
   pickPdf,
+  sampleLinearAlgebraPdf,
   startPdfIngest,
 } from "./api/commands";
 
@@ -25,6 +28,9 @@ function App() {
   const setDbPathHint = useAppStore((s) => s.setDbPathHint);
   const setSessions = useAppStore((s) => s.setSessions);
   const addSession = useAppStore((s) => s.addSession);
+  const setSelectionLatexMapped = useAppStore((s) => s.setSelectionLatexMapped);
+  const selectionTextForMap = useAppStore((s) => s.selectionText);
+  const selectionPageForMap = useAppStore((s) => s.selectionPage);
   const dbPathHint = useAppStore((s) => s.dbPathHint);
   const pdfPath = useAppStore((s) => s.pdfPath);
 
@@ -32,6 +38,9 @@ function App() {
   const [ingestLine, setIngestLine] = useState<string | null>(null);
   const [ingestError, setIngestError] = useState<string | null>(null);
   const [pagesIndexed, setPagesIndexed] = useState(0);
+  const [pagesEmbedded, setPagesEmbedded] = useState(0);
+  const [embedBusy, setEmbedBusy] = useState(false);
+  const [embedLine, setEmbedLine] = useState<string | null>(null);
 
   useEffect(() => {
     getPaths()
@@ -42,9 +51,34 @@ function App() {
   const refreshPageIndex = useCallback(() => {
     if (!bookId) return;
     listBookPages(bookId)
-      .then((rows) => setPagesIndexed(rows.length))
+      .then((rows) => {
+        setPagesIndexed(rows.length);
+        setPagesEmbedded(rows.filter((r) => r.hasEmbedding).length);
+      })
       .catch(console.error);
   }, [bookId]);
+
+  useEffect(() => {
+    if (!selectionTextForMap.trim() || selectionPageForMap == null) {
+      setSelectionLatexMapped(null);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      mapSelectionToLatex({
+        bookId,
+        pageNum: selectionPageForMap,
+        selectionText: selectionTextForMap,
+      })
+        .then((s) => setSelectionLatexMapped(s))
+        .catch(() => setSelectionLatexMapped(null));
+    }, 380);
+    return () => window.clearTimeout(t);
+  }, [
+    selectionTextForMap,
+    selectionPageForMap,
+    bookId,
+    setSelectionLatexMapped,
+  ]);
 
   useEffect(() => {
     refreshPageIndex();
@@ -80,6 +114,20 @@ function App() {
         const ok = (e.payload as { ok?: boolean })?.ok ?? false;
         setIngestBusy(false);
         setIngestLine(ok ? "取り込みが完了しました" : "取り込みが中断されました");
+        refreshPageIndex();
+      });
+      await reg("embed-progress", (e) => {
+        const p = e.payload as {
+          page?: number;
+          total?: number;
+          pageNum?: number;
+        };
+        setEmbedLine(
+          `埋め込み ${p.page ?? "?"}/${p.total ?? "?"} (PDF p.${p.pageNum ?? "?"})`,
+        );
+      });
+      await reg("embed-done", () => {
+        setEmbedBusy(false);
         refreshPageIndex();
       });
     })().catch(console.error);
@@ -132,17 +180,45 @@ function App() {
     await cancelPdfIngest();
   }, []);
 
+  const openSamplePdf = useCallback(async () => {
+    try {
+      const path = await sampleLinearAlgebraPdf();
+      const asset = convertFileSrc(path);
+      setPdf(path, asset);
+      setIngestError(null);
+      setIngestLine(null);
+    } catch (e) {
+      setIngestError(String(e));
+    }
+  }, [setPdf]);
+
+  const runEmbed = useCallback(async () => {
+    if (!bookId || embedBusy || pagesIndexed === 0) return;
+    setEmbedBusy(true);
+    setEmbedLine("埋め込みキュー…");
+    setIngestError(null);
+    try {
+      await embedBookPages(bookId);
+    } catch (e) {
+      setIngestError(String(e));
+      setEmbedLine(null);
+    } finally {
+      setEmbedBusy(false);
+      refreshPageIndex();
+    }
+  }, [bookId, embedBusy, pagesIndexed, refreshPageIndex]);
+
   const onChatSubmit = useCallback(
     async (text: string) => {
       if (!text.trim()) return;
-      const selectionText = useAppStore.getState().selectionText;
-      const selectionPage = useAppStore.getState().selectionPage;
+      const { selectionText, selectionPage, selectionLatexMapped } =
+        useAppStore.getState();
       try {
         const id = await createSession({
           bookId,
           pageNum: selectionPage,
           selectionText: selectionText || null,
-          selectionLatex: null,
+          selectionLatex: selectionLatexMapped || null,
           parentId: null,
         });
         addSession({
@@ -164,13 +240,21 @@ function App() {
           <div>
             <div className="app-brand__title">Math Teacher</div>
             <div className="app-brand__sub">
-              Phase 2: Poppler + Vision LaTeX + 概念抽出（DB）
+              選択→LaTeX / ベクトル埋め込み（text_linear_algebra.pdf 対応）
             </div>
           </div>
         </div>
         <div className="app-toolbar">
           <button type="button" className="btn btn--ghost" onClick={openPdf}>
             PDFを開く
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={openSamplePdf}
+            title="リポジトリ直下の text_linear_algebra.pdf"
+          >
+            サンプルPDF
           </button>
           <button
             type="button"
@@ -189,6 +273,15 @@ function App() {
           >
             取り込み停止
           </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            disabled={pagesIndexed === 0 || embedBusy}
+            onClick={runEmbed}
+            title="sidecar: pip install -r sidecar/requirements.txt"
+          >
+            ベクトル化
+          </button>
           <label className="toggle">
             <input
               type="checkbox"
@@ -203,9 +296,12 @@ function App() {
             <span className="token-bar__fill token-bar__fill--mock" />
           </span>
           <span className="app-meta__txt">
-            索引ページ {pagesIndexed} / book{" "}
+            索引 {pagesIndexed} ・ 埋め込み {pagesEmbedded} /{" "}
             <code className="app-meta__code">{bookId.slice(0, 8)}…</code>
           </span>
+          {embedLine ? (
+            <span className="app-meta__ingest">{embedLine}</span>
+          ) : null}
           {ingestLine ? (
             <span className="app-meta__ingest">{ingestLine}</span>
           ) : null}

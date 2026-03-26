@@ -47,9 +47,29 @@ export async function cancelPdfIngest(): Promise<void> {
 }
 
 export async function listBookPages(bookId: string): Promise<
-  { pageNum: number; preview: string }[]
+  { pageNum: number; preview: string; hasEmbedding: boolean }[]
 > {
   return invoke("list_book_pages", { bookId });
+}
+
+export async function mapSelectionToLatex(payload: {
+  bookId: string;
+  pageNum: number;
+  selectionText: string;
+}): Promise<string | null> {
+  return invoke("map_selection_to_latex", {
+    bookId: payload.bookId,
+    pageNum: payload.pageNum,
+    selectionText: payload.selectionText,
+  });
+}
+
+export async function sampleLinearAlgebraPdf(): Promise<string> {
+  return invoke("sample_linear_algebra_pdf");
+}
+
+export async function embedBookPages(bookId: string): Promise<number> {
+  return invoke<number>("embed_book_pages", { bookId });
 }
 
 export async function listSessions(bookId: string): Promise<
