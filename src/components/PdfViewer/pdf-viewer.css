@@ -1,0 +1,53 @@
+.pdf-scroller {
+  height: 100%;
+  overflow: auto;
+  background: #2d3033;
+  padding: 12px 0 48px;
+}
+
+.pdf-page-wrap {
+  position: relative;
+  margin: 0 auto 20px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  background: #fff;
+}
+
+.pdf-page-canvas {
+  display: block;
+}
+
+.pdf-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #9aa0a6;
+  font-size: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* PDF.js text layer — selectionと整合 */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-align: initial;
+  z-index: 2;
+  opacity: 0.35;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  pointer-events: auto;
+}
+
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}

@@ -1,0 +1,118 @@
+.chat-node {
+  min-width: 300px;
+  max-width: 360px;
+  background: linear-gradient(165deg, #1e2430 0%, #141820 100%);
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #e8eaed;
+  font-size: 13px;
+}
+
+.chat-node__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-node__title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.chat-node__badge {
+  font-size: 16px;
+  opacity: 0.9;
+}
+
+.chat-node__ctx {
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chat-node__ctx-meta {
+  font-size: 11px;
+  color: #8ab4f8;
+  margin-bottom: 6px;
+}
+
+.chat-node__selection {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #c4c7ce;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.chat-node__preview-row {
+  min-height: 36px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chat-node__katex {
+  font-size: 14px;
+  color: #e8eaed;
+}
+
+.chat-node__preview-placeholder {
+  font-size: 12px;
+  color: #6d7178;
+}
+
+.chat-node__input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: none;
+  background: rgba(0, 0, 0, 0.25);
+  color: #e8eaed;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.chat-node__input::placeholder {
+  color: #6d7178;
+}
+
+.chat-node__foot {
+  padding: 10px 12px 12px;
+}
+
+.chat-node__btn {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-node__btn--primary {
+  background: linear-gradient(135deg, #2dd4bf 0%, #0d9488 100%);
+  color: #0a0f14;
+}
+
+.chat-node__btn--primary:hover {
+  filter: brightness(1.06);
+}
+
+.chat-handle {
+  width: 8px !important;
+  height: 8px !important;
+  background: #2dd4bf !important;
+  border: 2px solid #0f172a !important;
+}
