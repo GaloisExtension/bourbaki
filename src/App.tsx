@@ -13,7 +13,9 @@ import {
   listBookPages,
   listSessions,
   mapSelectionToLatex,
+  memorySearch,
   pickPdf,
+  prefetchPages,
   sampleLinearAlgebraPdf,
   startPdfIngest,
 } from "./api/commands";
@@ -26,13 +28,15 @@ function App() {
   const setSelection = useAppStore((s) => s.setSelection);
   const setThinkingEnabled = useAppStore((s) => s.setThinkingEnabled);
   const setDbPathHint = useAppStore((s) => s.setDbPathHint);
-  const setSessions = useAppStore((s) => s.setSessions);
-  const addSession = useAppStore((s) => s.addSession);
+  const setSessionRows = useAppStore((s) => s.setSessionRows);
+  const chatVersion = useAppStore((s) => s.chatVersion);
   const setSelectionLatexMapped = useAppStore((s) => s.setSelectionLatexMapped);
   const selectionTextForMap = useAppStore((s) => s.selectionText);
   const selectionPageForMap = useAppStore((s) => s.selectionPage);
   const dbPathHint = useAppStore((s) => s.dbPathHint);
   const pdfPath = useAppStore((s) => s.pdfPath);
+  const updateAgentStatus = useAppStore((s) => s.updateAgentStatus);
+  const addCompressedSession = useAppStore((s) => s.addCompressedSession);
 
   const [ingestBusy, setIngestBusy] = useState(false);
   const [ingestLine, setIngestLine] = useState<string | null>(null);
@@ -41,6 +45,12 @@ function App() {
   const [pagesEmbedded, setPagesEmbedded] = useState(0);
   const [embedBusy, setEmbedBusy] = useState(false);
   const [embedLine, setEmbedLine] = useState<string | null>(null);
+  const [memQ, setMemQ] = useState("");
+  const [memHits, setMemHits] = useState<
+    { id: number; sessionId: string; summary: string; score: number }[]
+  >([]);
+  const [memBusy, setMemBusy] = useState(false);
+  const [memErr, setMemErr] = useState<string | null>(null);
 
   useEffect(() => {
     getPaths()
@@ -71,6 +81,8 @@ function App() {
       })
         .then((s) => setSelectionLatexMapped(s))
         .catch(() => setSelectionLatexMapped(null));
+      // Prefetch Agent: 選択ページ周辺を先読み（バックグラウンド）
+      prefetchPages({ bookId, centerPage: selectionPageForMap }).catch(() => {});
     }, 380);
     return () => window.clearTimeout(t);
   }, [
@@ -130,29 +142,61 @@ function App() {
         setEmbedBusy(false);
         refreshPageIndex();
       });
+      await reg("agent-status", (e) => {
+        const p = e.payload as {
+          agent: string;
+          status: "running" | "done" | "error";
+          detail: string;
+        };
+        updateAgentStatus(p);
+      });
+      await reg("compression-done", (e) => {
+        const p = e.payload as { sessionId?: string };
+        if (p.sessionId) addCompressedSession(p.sessionId);
+      });
     })().catch(console.error);
 
     return () => {
       disposed = true;
       unlisteners.forEach((u) => u());
     };
-  }, [refreshPageIndex]);
+  }, [refreshPageIndex, updateAgentStatus, addCompressedSession]);
 
   useEffect(() => {
     if (!bookId) return;
     listSessions(bookId)
       .then((rows) =>
-        setSessions(
+        setSessionRows(
           rows.map((r) => ({
             id: r.id,
-            label:
-              r.selectionText?.slice(0, 28) ||
-              `session ${r.id.slice(0, 8)}…`,
+            bookId: r.bookId,
+            pageNum: r.pageNum,
+            selectionText: r.selectionText,
+            selectionLatex: r.selectionLatex,
+            parentId: r.parentId,
+            resolved: r.resolved !== 0,
+            createdAt: r.createdAt,
           })),
         ),
       )
       .catch(console.error);
-  }, [bookId, setSessions]);
+  }, [bookId, chatVersion, setSessionRows]);
+
+  const newThread = useCallback(async () => {
+    const st = useAppStore.getState();
+    try {
+      await createSession({
+        bookId: st.bookId,
+        pageNum: st.selectionPage,
+        selectionText: st.selectionText || null,
+        selectionLatex: st.selectionLatexMapped || null,
+        parentId: null,
+      });
+      st.bumpChatVersion();
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   const openPdf = useCallback(async () => {
     const path = await pickPdf();
@@ -208,29 +252,21 @@ function App() {
     }
   }, [bookId, embedBusy, pagesIndexed, refreshPageIndex]);
 
-  const onChatSubmit = useCallback(
-    async (text: string) => {
-      if (!text.trim()) return;
-      const { selectionText, selectionPage, selectionLatexMapped } =
-        useAppStore.getState();
-      try {
-        const id = await createSession({
-          bookId,
-          pageNum: selectionPage,
-          selectionText: selectionText || null,
-          selectionLatex: selectionLatexMapped || null,
-          parentId: null,
-        });
-        addSession({
-          id,
-          label: text.slice(0, 40),
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [bookId, addSession],
-  );
+  const runMemSearch = useCallback(async () => {
+    const q = memQ.trim();
+    if (!q || !bookId) return;
+    setMemBusy(true);
+    setMemErr(null);
+    try {
+      const hits = await memorySearch({ bookId, query: q, limit: 8 });
+      setMemHits(hits);
+    } catch (e) {
+      setMemErr(String(e));
+      setMemHits([]);
+    } finally {
+      setMemBusy(false);
+    }
+  }, [bookId, memQ]);
 
   return (
     <div className="app-shell">
@@ -240,7 +276,7 @@ function App() {
           <div>
             <div className="app-brand__title">Math Teacher</div>
             <div className="app-brand__sub">
-              選択→LaTeX / ベクトル埋め込み（text_linear_algebra.pdf 対応）
+              Phase 5: RAG + Context + Adversarial + 透明性UI
             </div>
           </div>
         </div>
@@ -282,6 +318,14 @@ function App() {
           >
             ベクトル化
           </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => void newThread()}
+            title="現在の選択をコンテキストにした空スレッドを追加（キャンバスにノードが増えます）"
+          >
+            新しいスレッド
+          </button>
           <label className="toggle">
             <input
               type="checkbox"
@@ -313,6 +357,47 @@ function App() {
           ) : null}
         </div>
       </header>
+      <section className="memory-bar" aria-label="解決済み記憶の検索">
+        <span className="memory-bar__label">記憶</span>
+        <input
+          type="search"
+          className="memory-bar__input"
+          placeholder="キーワード（FTS+ベクトル）"
+          value={memQ}
+          onChange={(e) => setMemQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void runMemSearch();
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          disabled={!bookId || memBusy || !memQ.trim()}
+          title="解決済みセッションの要約を検索（python3 + 埋め込みモデル）"
+          onClick={() => void runMemSearch()}
+        >
+          {memBusy ? "検索中…" : "検索"}
+        </button>
+        {memErr ? (
+          <span className="memory-bar__err" title={memErr}>
+            {memErr.slice(0, 72)}
+            {memErr.length > 72 ? "…" : ""}
+          </span>
+        ) : null}
+        <div className="memory-bar__hits">
+          {memHits.map((h) => (
+            <details key={h.id} className="memory-hit">
+              <summary className="memory-hit__sum">
+                <span className="memory-hit__score">
+                  {typeof h.score === "number" ? h.score.toFixed(4) : h.score}
+                </span>
+                <code>{h.sessionId.slice(0, 8)}…</code>
+              </summary>
+              <pre className="memory-hit__body">{h.summary}</pre>
+            </details>
+          ))}
+        </div>
+      </section>
       <main className="app-main">
         <section className="pane pane--pdf">
           <PdfViewer
@@ -321,7 +406,7 @@ function App() {
           />
         </section>
         <section className="pane pane--flow">
-          <FlowCanvas onChatSubmit={onChatSubmit} />
+          <FlowCanvas />
         </section>
       </main>
     </div>

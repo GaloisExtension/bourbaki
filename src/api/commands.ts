@@ -86,3 +86,63 @@ export async function listSessions(bookId: string): Promise<
 > {
   return invoke("list_sessions", { bookId });
 }
+
+export async function listSessionMessages(sessionId: string): Promise<
+  { id: number; role: string; content: string; createdAt: number }[]
+> {
+  return invoke("list_session_messages", { sessionId });
+}
+
+export async function sendSessionMessage(payload: {
+  sessionId: string;
+  userText: string;
+  thinkingEnabled: boolean;
+}): Promise<string> {
+  return invoke<string>("send_session_message", {
+    sessionId: payload.sessionId,
+    userText: payload.userText,
+    thinkingEnabled: payload.thinkingEnabled,
+  });
+}
+
+export async function setSessionResolved(
+  sessionId: string,
+  resolved: boolean,
+): Promise<void> {
+  await invoke("set_session_resolved_cmd", { sessionId, resolved });
+}
+
+export async function branchSession(parentId: string): Promise<string> {
+  return invoke<string>("branch_session_cmd", { parentId });
+}
+
+export async function finalizeSessionMemory(sessionId: string): Promise<{
+  summary: string;
+  dim: number;
+}> {
+  return invoke("finalize_session_memory", { sessionId });
+}
+
+export async function prefetchPages(payload: {
+  bookId: string;
+  centerPage: number;
+}): Promise<void> {
+  await invoke("prefetch_pages", {
+    bookId: payload.bookId,
+    centerPage: payload.centerPage,
+  });
+}
+
+export async function memorySearch(payload: {
+  bookId: string;
+  query: string;
+  limit?: number;
+}): Promise<
+  { id: number; sessionId: string; summary: string; score: number }[]
+> {
+  return invoke("memory_search", {
+    bookId: payload.bookId,
+    query: payload.query,
+    limit: payload.limit ?? null,
+  });
+}

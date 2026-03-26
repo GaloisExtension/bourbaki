@@ -24,6 +24,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# pdf.js postinstall（リポジトリに巨大バイナリを含めない）
+public/pdfjs/cmaps/
+public/pdfjs/standard_fonts/
+
 # Claude Code ↔ Cursor: ホームディレクトリへのシンボリックリンク（clone 先では scripts/link-claude-home.sh を実行）
 .claude/skills
 CLAUDE.md

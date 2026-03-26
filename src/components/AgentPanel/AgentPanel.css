@@ -1,0 +1,87 @@
+.agent-panel {
+  margin-top: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.agent-panel.running {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.agent-panel.done {
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.agent-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  font-size: 12px;
+}
+
+.agent-panel-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.agent-panel-summary {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.agent-panel-chevron {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+}
+
+.agent-panel-details {
+  padding: 4px 10px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.agent-icon {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.agent-name {
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.agent-detail {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+}
+
+.agent-row.agent-running .agent-name {
+  color: #60a5fa;
+}
+
+.agent-row.agent-done .agent-name {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.agent-row.agent-error .agent-name {
+  color: #f87171;
+}

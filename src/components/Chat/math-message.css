@@ -1,0 +1,22 @@
+.math-msg {
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #e8eaed;
+}
+
+.math-msg__display {
+  display: block;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.math-msg__text {
+  white-space: pre-wrap;
+}
+
+.math-msg__fallback {
+  font-size: 12px;
+  color: #f9a8a8;
+}

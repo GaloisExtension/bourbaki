@@ -18,6 +18,13 @@ pub fn page_count(pdf_path: &Path) -> Result<u32, String> {
     Ok(doc.get_pages().len() as u32)
 }
 
+fn pdftoppm_dpi() -> String {
+    std::env::var("MATH_TEACHER_PDFTOPPM_DPI")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "200".to_string())
+}
+
 /// `pdftoppm` が生成する `{prefix}-{page}.png` のパスを返す（page は 1-based）。
 pub fn render_page_png(pdf_path: &Path, page_1based: u32, out_prefix: &Path) -> Result<PathBuf, String> {
     if !pdftoppm_available() {
@@ -27,11 +34,12 @@ pub fn render_page_png(pdf_path: &Path, page_1based: u32, out_prefix: &Path) -> 
     }
     let out_str = out_prefix.to_string_lossy().to_string();
     let p = page_1based.to_string();
+    let dpi = pdftoppm_dpi();
     let status = Command::new("pdftoppm")
         .args([
             "-png",
             "-r",
-            "144",
+            dpi.as_str(),
             "-f",
             p.as_str(),
             "-l",

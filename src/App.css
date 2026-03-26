@@ -91,6 +91,16 @@ body {
   background: rgba(45, 212, 191, 0.2);
 }
 
+.btn--ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .btn--accent {
   background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
   color: #0a0f14;
@@ -196,6 +206,84 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.memory-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 16px;
+  max-height: 120px;
+  overflow-y: auto;
+  border-bottom: 1px solid rgba(94, 234, 212, 0.1);
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.memory-bar__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #5eead4;
+  align-self: center;
+}
+
+.memory-bar__input {
+  min-width: 160px;
+  flex: 1;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e8eaed;
+  font-size: 12px;
+}
+
+.memory-bar__hits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.memory-bar__err {
+  font-size: 11px;
+  color: #f87171;
+  align-self: center;
+}
+
+.memory-hit {
+  flex: 0 1 auto;
+  max-width: min(360px, 100%);
+  border: 1px solid rgba(94, 234, 212, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 11px;
+}
+
+.memory-hit__sum {
+  cursor: pointer;
+  padding: 4px 8px;
+  color: #94a3b8;
+}
+
+.memory-hit__score {
+  color: #2dd4bf;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.memory-hit__body {
+  margin: 0;
+  padding: 4px 8px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 88px;
+  overflow: auto;
+  color: #c4c7ce;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .app-main {

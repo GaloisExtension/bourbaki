@@ -6,6 +6,7 @@ import {
   type PDFPageProxy,
 } from "pdfjs-dist";
 import "./pdf-viewer.css";
+import { getPdfDocumentInit } from "../../pdfjsAssets";
 
 import "../../pdf-worker";
 
@@ -63,7 +64,9 @@ function PageCanvas({ doc, pageNum, scale }: PageCanvasProps) {
       if (cancelled) return;
 
       textDiv.replaceChildren();
-      const textContent = await page.getTextContent();
+      const textContent = await page.getTextContent({
+        includeMarkedContent: false,
+      });
       const textLayer = new TextLayer({
         textContentSource: textContent,
         container: textDiv,
@@ -114,7 +117,7 @@ export function PdfViewer({ fileUrl, onSelectionChange }: PdfViewerProps) {
       return;
     }
     let cancelled = false;
-    const loading = getDocument({ url: fileUrl }).promise;
+    const loading = getDocument(getPdfDocumentInit(fileUrl)).promise;
     loading
       .then((d) => {
         if (cancelled) {

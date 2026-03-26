@@ -1,2 +1,3 @@
-# 埋め込みパイプライン（pages.embedding）。torch は sentence-transformers が依存解決。
+# 埋め込みパイプライン（pages.embedding・Phase4 Memory）。
+# torch は sentence-transformers が依存解決。Ruri v3-310m は VRAM 目安 8GB+（MATH_TEACHER_EMBED_MODEL で指定）。
 sentence-transformers>=3.0.0

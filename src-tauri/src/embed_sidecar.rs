@@ -24,7 +24,7 @@ pub fn embedder_script_path() -> Result<PathBuf, String> {
     }
 }
 
-pub fn run_embedder(script: &Path, text: &str) -> Result<Vec<u8>, String> {
+fn run_embedder_payload(script: &Path, payload: serde_json::Value) -> Result<Vec<u8>, String> {
     let mut child = Command::new("python3")
         .arg(script.as_os_str())
         .stdin(Stdio::piped())
@@ -38,7 +38,7 @@ pub fn run_embedder(script: &Path, text: &str) -> Result<Vec<u8>, String> {
         })?;
 
     let mut stdin = child.stdin.take().ok_or_else(|| "stdin".to_string())?;
-    let payload = serde_json::json!({ "text": text }).to_string();
+    let payload = payload.to_string();
     stdin
         .write_all(payload.as_bytes())
         .map_err(|e| format!("embedder stdin: {e}"))?;
@@ -63,6 +63,18 @@ pub fn run_embedder(script: &Path, text: &str) -> Result<Vec<u8>, String> {
     base64::engine::general_purpose::STANDARD
         .decode(b64)
         .map_err(|e| format!("base64: {e}"))
+}
+
+pub fn run_embedder(script: &Path, text: &str) -> Result<Vec<u8>, String> {
+    run_embedder_payload(script, serde_json::json!({ "text": text }))
+}
+
+/// Memory検索・クエリ側埋め込み（E5 なら query: プレフィックス）
+pub fn run_embedder_query(script: &Path, text: &str) -> Result<Vec<u8>, String> {
+    run_embedder_payload(
+        script,
+        serde_json::json!({ "text": text, "query": true }),
+    )
 }
 
 pub fn embed_all_missing(
