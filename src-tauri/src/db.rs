@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS concepts (
     label TEXT,
     name TEXT,
     latex TEXT NOT NULL,
+    context TEXT,
     embedding BLOB
 );
 
@@ -120,6 +121,12 @@ fn migrate(conn: &Connection) -> SqlResult<()> {
             [],
         )?;
         conn.execute("PRAGMA user_version = 1", [])?;
+    }
+    if ver < 2 {
+        if !column_exists(conn, "concepts", "context")? {
+            conn.execute("ALTER TABLE concepts ADD COLUMN context TEXT", [])?;
+        }
+        conn.execute("PRAGMA user_version = 2", [])?;
     }
     Ok(())
 }
@@ -251,8 +258,8 @@ pub fn replace_concepts_for_page(
         let kind = normalize_concept_type(&it.kind);
         let latex_clip: String = it.latex.chars().take(8000).collect();
         conn.execute(
-            "INSERT INTO concepts (book_id, page_num, type, label, name, latex)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO concepts (book_id, page_num, type, label, name, latex, context)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 book_id,
                 page_num,
@@ -260,6 +267,7 @@ pub fn replace_concepts_for_page(
                 it.label.as_deref(),
                 it.name.as_deref(),
                 latex_clip,
+                it.context.as_deref(),
             ],
         )?;
     }
@@ -314,6 +322,88 @@ pub fn update_page_embedding(
         params![blob, book_id, page_num],
     )?;
     Ok(())
+}
+
+/// 埋め込みが未生成の概念ID + (type, label, name, latex, context) を返す
+pub struct ConceptEmbedRow {
+    pub id: i64,
+    pub kind: String,
+    pub label: Option<String>,
+    pub name: Option<String>,
+    pub latex: String,
+    pub context: Option<String>,
+}
+
+pub fn list_concepts_missing_embedding(
+    conn: &Connection,
+    book_id: &str,
+) -> SqlResult<Vec<ConceptEmbedRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, type, label, name, latex, context FROM concepts
+         WHERE book_id = ?1 AND latex != ''
+         AND (embedding IS NULL OR length(embedding) < 16)
+         ORDER BY id ASC",
+    )?;
+    let rows = stmt.query_map(params![book_id], |row| {
+        Ok(ConceptEmbedRow {
+            id: row.get(0)?,
+            kind: row.get(1)?,
+            label: row.get(2)?,
+            name: row.get(3)?,
+            latex: row.get(4)?,
+            context: row.get(5)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+pub fn update_concept_embedding(conn: &Connection, concept_id: i64, blob: &[u8]) -> SqlResult<()> {
+    conn.execute(
+        "UPDATE concepts SET embedding = ?1 WHERE id = ?2",
+        params![blob, concept_id],
+    )?;
+    Ok(())
+}
+
+/// 概念ベクトル検索用: 全概念の id + embedding を返す（RAG Agent用）
+pub struct ConceptVecRow {
+    pub id: i64,
+    pub page_num: i32,
+    pub kind: String,
+    pub label: Option<String>,
+    pub name: Option<String>,
+    pub latex: String,
+    pub embedding: Option<Vec<u8>>,
+}
+
+pub fn list_concept_rows_for_rag(
+    conn: &Connection,
+    book_id: &str,
+) -> SqlResult<Vec<ConceptVecRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, page_num, type, label, name, latex, embedding FROM concepts
+         WHERE book_id = ?1 ORDER BY id ASC",
+    )?;
+    let rows = stmt.query_map(params![book_id], |row| {
+        Ok(ConceptVecRow {
+            id: row.get(0)?,
+            page_num: row.get(1)?,
+            kind: row.get(2)?,
+            label: row.get(3)?,
+            name: row.get(4)?,
+            latex: row.get(5)?,
+            embedding: row.get(6)?,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
 }
 
 /// ページ一覧（プレビュー用・先頭 200 文字 + 埋め込み有無）

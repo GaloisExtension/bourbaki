@@ -84,6 +84,9 @@ pub struct ConceptItem {
     pub label: Option<String>,
     pub name: Option<String>,
     pub latex: String,
+    /// 埋め込み用コンテキスト（「第N章の〇〇に関する定義」などの1文）
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 const CONCEPT_PROMPT: &str = r#"From the following LaTeX page fragment, extract structural math items.
@@ -93,6 +96,7 @@ Return a JSON object with key "concepts" only. Each item:
 - label: short label if any (e.g. 定義2.1), or null
 - name: concept name in Japanese or English if clear, or null
 - latex: short verbatim LaTeX excerpt (max ~400 chars) from the source
+- context: one Japanese sentence summarizing where/why this item appears (e.g. "第2章の線形独立性の議論で用いられるコーシー列の定義。"), or null
 
 Keep 0–12 items. If nothing structural, return {"concepts":[]}."#;
 

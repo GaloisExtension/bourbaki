@@ -35,6 +35,26 @@ fn emit_agent_status(app: &tauri::AppHandle, agent: &str, status: &str, detail: 
     .ok();
 }
 
+/// 概念ベクトル検索: クエリベクトルに最も近い概念行を返す（上位 limit 件）
+fn top_concepts_by_vector<'a>(
+    rows: &'a [db::ConceptVecRow],
+    qvec: &[f32],
+    limit: usize,
+) -> Vec<&'a db::ConceptVecRow> {
+    let mut scored: Vec<(f32, usize)> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(i, r)| {
+            let b = r.embedding.as_ref()?;
+            if b.len() < 16 { return None; }
+            let dv = memory::f32_blob_to_vec(b)?;
+            Some((memory::cosine_dot_norm_q_d(qvec, &dv), i))
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.iter().take(limit).map(|(_, i)| &rows[*i]).collect()
+}
+
 fn run_rag_hybrid(
     fts_ids: Vec<i64>,
     rows: &[db::PageRowLite],
@@ -413,6 +433,41 @@ async fn send_session_message(
                 };
                 for (pn, latex) in &page_latexes {
                     rag_context.push_str(&format!("=== ページ{pn} ===\n{latex}\n\n"));
+                }
+
+                // 概念ベクトル検索（定義・定理単位の精密検索）
+                let concept_rows = {
+                    let conn = db.0.lock().map_err(|e| e.to_string())?;
+                    db::list_concept_rows_for_rag(&conn, &book_id).unwrap_or_default()
+                };
+                let top_concepts = top_concepts_by_vector(&concept_rows, &qvec, 5);
+                // ページ取得済みのもの以外を追加コンテキストとして注入
+                let already_pages: std::collections::HashSet<i32> = top_page_nums.iter().cloned().collect();
+                let extra_concepts: Vec<_> = top_concepts
+                    .iter()
+                    .filter(|c| !already_pages.contains(&c.page_num))
+                    .collect();
+                if !extra_concepts.is_empty() {
+                    rag_context.push_str("=== 関連概念（概念ベクトル検索） ===\n");
+                    for c in &extra_concepts {
+                        let tag = match c.kind.as_str() {
+                            "definition" => "[定義]",
+                            "theorem"    => "[定理]",
+                            "lemma"      => "[補題]",
+                            "example"    => "[例]",
+                            "proof"      => "[証明]",
+                            "remark"     => "[注記]",
+                            _            => "[その他]",
+                        };
+                        let label = c.label.as_deref().unwrap_or("");
+                        let name = c.name.as_deref().unwrap_or("");
+                        rag_context.push_str(&format!(
+                            "{tag} {label}{} (p.{})\n{}\n\n",
+                            if name.is_empty() { "".to_string() } else { format!(" {name}") },
+                            c.page_num,
+                            c.latex
+                        ));
+                    }
                 }
 
                 // GraphRAG展開

@@ -77,6 +77,50 @@ pub fn run_embedder_query(script: &Path, text: &str) -> Result<Vec<u8>, String> 
     )
 }
 
+/// 型タグ（日本語）を付与した概念テキストを構築する
+fn concept_embed_text(
+    kind: &str,
+    label: Option<&str>,
+    name: Option<&str>,
+    latex: &str,
+    context: Option<&str>,
+) -> String {
+    let tag = match kind {
+        "definition" => "[定義]",
+        "theorem"    => "[定理]",
+        "lemma"      => "[補題]",
+        "example"    => "[例]",
+        "proof"      => "[証明]",
+        "remark"     => "[注記]",
+        _            => "[その他]",
+    };
+    let mut header_parts: Vec<&str> = vec![tag];
+    let label_s;
+    let name_s;
+    if let Some(l) = label { if !l.is_empty() { label_s = l.to_string(); header_parts.push(&label_s); } }
+    if let Some(n) = name  { if !n.is_empty() { name_s = n.to_string(); header_parts.push(&name_s); } }
+    let header = header_parts.join(" ");
+    let latex_clip: String = latex.chars().take(6000).collect();
+    if let Some(ctx) = context.filter(|s| !s.is_empty()) {
+        format!("{header}\n{ctx}\n{latex_clip}")
+    } else {
+        format!("{header}\n{latex_clip}")
+    }
+}
+
+/// 概念単位の埋め込みを生成（型プレフィックス + コンテキスト付き）
+pub fn run_embedder_concept(
+    script: &Path,
+    kind: &str,
+    label: Option<&str>,
+    name: Option<&str>,
+    latex: &str,
+    context: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let text = concept_embed_text(kind, label, name, latex, context);
+    run_embedder_payload(script, serde_json::json!({ "text": text }))
+}
+
 pub fn embed_all_missing(
     db: &Arc<Mutex<Connection>>,
     book_id: &str,
@@ -114,6 +158,30 @@ pub fn embed_all_missing(
             }),
         );
     }
-    let _ = app.emit("embed-done", serde_json::json!({ "count": done }));
+    // ── 概念単位の埋め込み（型プレフィックス + コンテキスト付き）──
+    let concepts = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        db::list_concepts_missing_embedding(&conn, book_id).map_err(|e| e.to_string())?
+    };
+    let concept_total = concepts.len();
+    for concept in &concepts {
+        let blob = run_embedder_concept(
+            script,
+            &concept.kind,
+            concept.label.as_deref(),
+            concept.name.as_deref(),
+            &concept.latex,
+            concept.context.as_deref(),
+        );
+        if let Ok(blob) = blob {
+            let conn = db.lock().map_err(|e| e.to_string())?;
+            db::update_concept_embedding(&conn, concept.id, &blob).ok();
+        }
+    }
+
+    let _ = app.emit(
+        "embed-done",
+        serde_json::json!({ "count": done, "conceptCount": concept_total }),
+    );
     Ok(done)
 }
