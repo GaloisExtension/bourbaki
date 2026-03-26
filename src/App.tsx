@@ -1,10 +1,19 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "./App.css";
 import { PdfViewer } from "./components/PdfViewer/PdfViewer";
 import { FlowCanvas } from "./components/Canvas/FlowCanvas";
 import { useAppStore } from "./store/appStore";
-import { createSession, getPaths, listSessions, pickPdf } from "./api/commands";
+import {
+  cancelPdfIngest,
+  createSession,
+  getPaths,
+  listBookPages,
+  listSessions,
+  pickPdf,
+  startPdfIngest,
+} from "./api/commands";
 
 function App() {
   const pdfAssetUrl = useAppStore((s) => s.pdfAssetUrl);
@@ -17,12 +26,69 @@ function App() {
   const setSessions = useAppStore((s) => s.setSessions);
   const addSession = useAppStore((s) => s.addSession);
   const dbPathHint = useAppStore((s) => s.dbPathHint);
+  const pdfPath = useAppStore((s) => s.pdfPath);
+
+  const [ingestBusy, setIngestBusy] = useState(false);
+  const [ingestLine, setIngestLine] = useState<string | null>(null);
+  const [ingestError, setIngestError] = useState<string | null>(null);
+  const [pagesIndexed, setPagesIndexed] = useState(0);
 
   useEffect(() => {
     getPaths()
       .then((p) => setDbPathHint(p.dbPath))
       .catch(console.error);
   }, [setDbPathHint]);
+
+  const refreshPageIndex = useCallback(() => {
+    if (!bookId) return;
+    listBookPages(bookId)
+      .then((rows) => setPagesIndexed(rows.length))
+      .catch(console.error);
+  }, [bookId]);
+
+  useEffect(() => {
+    refreshPageIndex();
+  }, [refreshPageIndex]);
+
+  useEffect(() => {
+    let disposed = false;
+    const unlisteners: UnlistenFn[] = [];
+
+    void (async () => {
+      const reg = async (name: string, cb: Parameters<typeof listen>[1]) => {
+        const u = await listen(name, cb);
+        if (disposed) u();
+        else unlisteners.push(u);
+      };
+      await reg("ingest-progress", (e) => {
+        const p = e.payload as {
+          phase?: string;
+          page?: number;
+          total?: number;
+          message?: string;
+        };
+        const total = p.total ?? "?";
+        const page = p.page ?? "?";
+        const msg = p.message ?? p.phase ?? "";
+        setIngestLine(`${p.phase}: ${page}/${total} ${msg}`.trim());
+      });
+      await reg("ingest-error", (e) => {
+        setIngestError(String(e.payload));
+        setIngestBusy(false);
+      });
+      await reg("ingest-done", (e) => {
+        const ok = (e.payload as { ok?: boolean })?.ok ?? false;
+        setIngestBusy(false);
+        setIngestLine(ok ? "取り込みが完了しました" : "取り込みが中断されました");
+        refreshPageIndex();
+      });
+    })().catch(console.error);
+
+    return () => {
+      disposed = true;
+      unlisteners.forEach((u) => u());
+    };
+  }, [refreshPageIndex]);
 
   useEffect(() => {
     if (!bookId) return;
@@ -45,7 +111,26 @@ function App() {
     if (!path) return;
     const asset = convertFileSrc(path);
     setPdf(path, asset);
+    setIngestError(null);
+    setIngestLine(null);
   }, [setPdf]);
+
+  const runIngest = useCallback(async () => {
+    if (!pdfPath || ingestBusy) return;
+    setIngestError(null);
+    setIngestBusy(true);
+    setIngestLine("キュー開始…");
+    try {
+      await startPdfIngest({ bookId, pdfPath });
+    } catch (err) {
+      setIngestBusy(false);
+      setIngestError(String(err));
+    }
+  }, [bookId, pdfPath, ingestBusy]);
+
+  const stopIngest = useCallback(async () => {
+    await cancelPdfIngest();
+  }, []);
 
   const onChatSubmit = useCallback(
     async (text: string) => {
@@ -79,13 +164,30 @@ function App() {
           <div>
             <div className="app-brand__title">Math Teacher</div>
             <div className="app-brand__sub">
-              PDF + ブランチ会話（Phase 1〜3 コア）
+              Phase 2: Poppler + Vision LaTeX + 概念抽出（DB）
             </div>
           </div>
         </div>
         <div className="app-toolbar">
           <button type="button" className="btn btn--ghost" onClick={openPdf}>
             PDFを開く
+          </button>
+          <button
+            type="button"
+            className="btn btn--accent"
+            disabled={!pdfPath || ingestBusy}
+            onClick={runIngest}
+            title="OPENAI_API_KEY と poppler (pdftoppm) が必要です"
+          >
+            LaTeX 取り込み
+          </button>
+          <button
+            type="button"
+            className="btn btn--muted"
+            disabled={!ingestBusy}
+            onClick={stopIngest}
+          >
+            取り込み停止
           </button>
           <label className="toggle">
             <input
@@ -100,7 +202,19 @@ function App() {
           <span className="token-bar" aria-hidden>
             <span className="token-bar__fill token-bar__fill--mock" />
           </span>
-          <span className="app-meta__txt">DB: 接続済み</span>
+          <span className="app-meta__txt">
+            索引ページ {pagesIndexed} / book{" "}
+            <code className="app-meta__code">{bookId.slice(0, 8)}…</code>
+          </span>
+          {ingestLine ? (
+            <span className="app-meta__ingest">{ingestLine}</span>
+          ) : null}
+          {ingestError ? (
+            <span className="app-meta__err" title={ingestError}>
+              {ingestError.slice(0, 80)}
+              {ingestError.length > 80 ? "…" : ""}
+            </span>
+          ) : null}
         </div>
       </header>
       <main className="app-main">

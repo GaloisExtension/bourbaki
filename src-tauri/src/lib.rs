@@ -1,12 +1,17 @@
+mod openai;
 mod db;
+mod pdf_render;
+mod ingest;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 
+use ingest::IngestState;
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
-pub struct DbState(pub Mutex<rusqlite::Connection>);
+pub struct DbState(pub Arc<Mutex<rusqlite::Connection>>);
 
 pub struct PathsState {
     pub db_path: PathBuf,
@@ -53,6 +58,59 @@ fn upsert_page_latex(
 }
 
 #[tauri::command]
+fn list_book_pages(
+    book_id: String,
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let rows = db::list_pages_preview(&conn, &book_id).map_err(|e| e.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(page_num, preview)| {
+            serde_json::json!({
+                "pageNum": page_num,
+                "preview": preview,
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
+async fn start_pdf_ingest(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, DbState>,
+    ingest: tauri::State<'_, IngestState>,
+    book_id: String,
+    pdf_path: String,
+) -> Result<(), String> {
+    let path = PathBuf::from(&pdf_path);
+    if !path.is_file() {
+        return Err(format!("PDF が見つかりません: {pdf_path}"));
+    }
+    if ingest.busy.swap(true, Ordering::SeqCst) {
+        return Err("既に取り込みが実行中です".into());
+    }
+    ingest.cancel.store(false, Ordering::SeqCst);
+
+    let app2 = app.clone();
+    let db_arc = db.0.clone();
+    let ctrl = IngestState {
+        cancel: ingest.cancel.clone(),
+        busy: ingest.busy.clone(),
+    };
+
+    tauri::async_runtime::spawn(async move {
+        ingest::run_ingestion(app2, db_arc, ctrl, book_id, path).await;
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_pdf_ingest(ingest: tauri::State<'_, IngestState>) {
+    ingest.cancel.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
 fn create_session(
     book_id: String,
     page_num: Option<i32>,
@@ -80,7 +138,10 @@ fn create_session(
 }
 
 #[tauri::command]
-fn list_sessions(book_id: String, state: tauri::State<'_, DbState>) -> Result<Vec<serde_json::Value>, String> {
+fn list_sessions(
+    book_id: String,
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<serde_json::Value>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
@@ -111,15 +172,20 @@ fn list_sessions(book_id: String, state: tauri::State<'_, DbState>) -> Result<Ve
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = dotenvy::dotenv();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(IngestState::new())
         .setup(|app| {
             let data_dir = default_data_dir()?;
             let db_path = data_dir.join("math_teacher.db");
             let conn = db::open_and_migrate(&db_path).map_err(|e| e.to_string())?;
-            app.manage(DbState(Mutex::new(conn)));
-            app.manage(PathsState { db_path: db_path.clone() });
+            app.manage(DbState(Arc::new(Mutex::new(conn))));
+            app.manage(PathsState {
+                db_path: db_path.clone(),
+            });
             if cfg!(debug_assertions) {
                 eprintln!("[math-teacher] DB at {}", db_path.display());
             }
@@ -129,6 +195,9 @@ pub fn run() {
             get_paths,
             pick_pdf,
             upsert_page_latex,
+            list_book_pages,
+            start_pdf_ingest,
+            cancel_pdf_ingest,
             create_session,
             list_sessions,
         ])

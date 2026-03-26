@@ -35,7 +35,13 @@ export const useAppStore = create<AppStore>((set) => ({
   dbPathHint: null,
   setBookId: (bookId) => set({ bookId }),
   setPdf: (pdfPath, pdfAssetUrl) =>
-    set({ pdfPath, pdfAssetUrl, selectionText: "", selectionPage: null }),
+    set((st) => ({
+      pdfPath,
+      pdfAssetUrl,
+      selectionText: "",
+      selectionPage: null,
+      bookId: pdfPath ? crypto.randomUUID() : st.bookId,
+    })),
   setSelection: (selectionText, selectionPage) => set({ selectionText, selectionPage }),
   addSession: (s) => set((st) => ({ sessions: [s, ...st.sessions] })),
   setSessions: (sessions) => set({ sessions }),

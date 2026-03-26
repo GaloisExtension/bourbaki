@@ -32,6 +32,26 @@ export async function createSession(payload: {
   });
 }
 
+export async function startPdfIngest(payload: {
+  bookId: string;
+  pdfPath: string;
+}): Promise<void> {
+  await invoke("start_pdf_ingest", {
+    bookId: payload.bookId,
+    pdfPath: payload.pdfPath,
+  });
+}
+
+export async function cancelPdfIngest(): Promise<void> {
+  await invoke("cancel_pdf_ingest");
+}
+
+export async function listBookPages(bookId: string): Promise<
+  { pageNum: number; preview: string }[]
+> {
+  return invoke("list_book_pages", { bookId });
+}
+
 export async function listSessions(bookId: string): Promise<
   {
     id: string;
