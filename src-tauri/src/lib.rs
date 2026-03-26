@@ -26,14 +26,19 @@ fn get_paths(state: tauri::State<'_, PathsState>) -> Result<serde_json::Value, S
     }))
 }
 
+/// `blocking_pick_file` はメインスレッドではデッドロックしうるため、blocking スレッドで実行する。
 #[tauri::command]
-fn pick_pdf(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let path = app
-        .dialog()
-        .file()
-        .add_filter("PDF", &["pdf"])
-        .blocking_pick_file();
-    Ok(path.map(|p| p.to_string()))
+async fn pick_pdf(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let app = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("PDF", &["pdf"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(picked.map(|p| p.to_string()))
 }
 
 #[tauri::command]
