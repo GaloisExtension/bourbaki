@@ -32,3 +32,11 @@ public/pdfjs/standard_fonts/
 .claude/skills
 CLAUDE.md
 AGENTS.md
+
+# Python venv
+.venv/
+__pycache__/
+*.pyc
+
+# Cursor
+.cursor/
