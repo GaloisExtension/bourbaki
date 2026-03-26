@@ -123,6 +123,37 @@ export async function finalizeSessionMemory(sessionId: string): Promise<{
   return invoke("finalize_session_memory", { sessionId });
 }
 
+export async function listBooks(): Promise<
+  {
+    id: string;
+    pdfPath: string;
+    pageCount: number | null;
+    createdAt: number;
+    indexedPages: number;
+    embeddedPages: number;
+  }[]
+> {
+  return invoke("list_books");
+}
+
+export async function deleteBook(bookId: string): Promise<void> {
+  await invoke("delete_book", { bookId });
+}
+
+export async function listResolvedSessions(bookId: string): Promise<
+  {
+    id: string;
+    pageNum: number | null;
+    selectionText: string | null;
+    selectionLatex: string | null;
+    createdAt: number;
+    summary: string | null;
+    resolvedAt: number | null;
+  }[]
+> {
+  return invoke("list_resolved_sessions", { bookId });
+}
+
 export async function prefetchPages(payload: {
   bookId: string;
   centerPage: number;
@@ -145,4 +176,29 @@ export async function memorySearch(payload: {
     query: payload.query,
     limit: payload.limit ?? null,
   });
+}
+
+// ── ChatGPT セッション管理 ──────────────────
+
+export async function openChatgptLogin(): Promise<void> {
+  await invoke("open_chatgpt_login");
+}
+
+export async function saveChatgptSession(accessToken: string): Promise<void> {
+  await invoke("save_chatgpt_session", { accessToken });
+}
+
+export async function logoutChatgpt(): Promise<void> {
+  await invoke("logout_chatgpt");
+}
+
+export async function getSettings(): Promise<{
+  chatgptLoggedIn: boolean;
+  hasVisionKey: boolean;
+}> {
+  return invoke("get_settings");
+}
+
+export async function saveVisionApiKey(key: string): Promise<void> {
+  await invoke("save_vision_api_key", { key });
 }

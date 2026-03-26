@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  useReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
@@ -53,7 +54,12 @@ function layoutTree(sessions: SessionDetail[]): Map<string, { x: number; y: numb
   return positions;
 }
 
-export function FlowCanvas() {
+type FlowCanvasProps = {
+  onRegisterFocusSession?: (fn: (sessionId: string) => void) => void;
+};
+
+function FlowInner({ onRegisterFocusSession }: FlowCanvasProps) {
+  const { setCenter, getNode } = useReactFlow();
   const thinkingEnabled = useAppStore((s) => s.thinkingEnabled);
   const sessionRows = useAppStore((s) => s.sessionRows);
   const chatVersion = useAppStore((s) => s.chatVersion);
@@ -68,6 +74,26 @@ export function FlowCanvas() {
   >({});
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [errMap, setErrMap] = useState<Record<string, string>>({});
+
+  const focusSession = useCallback(
+    (sessionId: string) => {
+      const node = getNode(sessionId);
+      if (node) {
+        setCenter(node.position.x + 180, node.position.y + 150, {
+          zoom: 1,
+          duration: 600,
+        });
+      }
+    },
+    [getNode, setCenter],
+  );
+
+  const focusSessionRef = useRef(focusSession);
+  focusSessionRef.current = focusSession;
+
+  useEffect(() => {
+    onRegisterFocusSession?.((id) => focusSessionRef.current(id));
+  }, [onRegisterFocusSession]);
 
   useEffect(() => {
     if (sessionRows.length === 0) {
@@ -245,28 +271,34 @@ export function FlowCanvas() {
   const isValidConnection = useCallback(() => false, []);
 
   return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      fitView
+      fitViewOptions={{ padding: 0.2 }}
+      minZoom={0.35}
+      maxZoom={1.4}
+      nodesDraggable={false}
+      proOptions={{ hideAttribution: true }}
+      isValidConnection={isValidConnection}
+    >
+      <Background gap={20} size={1} color="#334155" />
+      <Controls />
+      <MiniMap
+        nodeStrokeWidth={2}
+        maskColor="rgba(15, 23, 42, 0.85)"
+        style={{ background: "#0f172a" }}
+      />
+    </ReactFlow>
+  );
+}
+
+export function FlowCanvas({ onRegisterFocusSession }: FlowCanvasProps) {
+  return (
     <div className="flow-host">
       <ReactFlowProvider>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{ padding: 0.2 }}
-          minZoom={0.35}
-          maxZoom={1.4}
-          nodesDraggable={false}
-          proOptions={{ hideAttribution: true }}
-          isValidConnection={isValidConnection}
-        >
-          <Background gap={20} size={1} color="#334155" />
-          <Controls />
-          <MiniMap
-            nodeStrokeWidth={2}
-            maskColor="rgba(15, 23, 42, 0.85)"
-            style={{ background: "#0f172a" }}
-          />
-        </ReactFlow>
+        <FlowInner onRegisterFocusSession={onRegisterFocusSession} />
       </ReactFlowProvider>
     </div>
   );

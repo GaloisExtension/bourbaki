@@ -1,4 +1,5 @@
 mod openai;
+mod chatgpt_session;
 mod db;
 mod embed_sidecar;
 mod ingest;
@@ -319,10 +320,19 @@ async fn send_session_message(
         return Err("空のメッセージは送れません".into());
     }
 
-    let api_key = match std::env::var("OPENAI_API_KEY") {
-        Ok(k) if !k.is_empty() => k,
-        _ => return Err("OPENAI_API_KEY が空です".into()),
-    };
+    // ChatGPTセッショントークン（優先）
+    let chatgpt_token: Option<String> = chatgpt_session::load_access_token(&app);
+    // ユーティリティ（正規化・Adversarial・圧縮）用 OpenAI APIキー
+    let util_api_key: Option<String> = chatgpt_session::load_vision_api_key(&app);
+
+    if chatgpt_token.is_none() && util_api_key.is_none() {
+        return Err(
+            "ChatGPTセッションまたはOPENAI_API_KEYが必要です。設定からログインしてください。"
+                .into(),
+        );
+    }
+    // OpenAI APIパスで使うキー（ChatGPT未ログイン時のフォールバック）
+    let api_key_fallback = util_api_key.clone().unwrap_or_default();
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -345,11 +355,15 @@ async fn send_session_message(
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.05);
 
-    // ── Step 1: 入力正規化 ──
+    // ── Step 1: 入力正規化（OpenAI APIキーがある場合のみ）──
     emit_agent_status(&app, "normalizer", "running", "入力を正規化中");
-    let normalized = openai::normalize_math_input(&client, &api_key, &mini_model, &trimmed)
-        .await
-        .unwrap_or_else(|_| trimmed.clone());
+    let normalized = if let Some(ref key) = util_api_key {
+        openai::normalize_math_input(&client, key, &mini_model, &trimmed)
+            .await
+            .unwrap_or_else(|_| trimmed.clone())
+    } else {
+        trimmed.clone()
+    };
     emit_agent_status(&app, "normalizer", "done", "");
 
     // ── Step 2: セッション情報取得 ──
@@ -533,7 +547,7 @@ async fn send_session_message(
             let ids_to_compress: Vec<i64> = to_compress.iter().map(|(id, _, _)| *id).collect();
 
             if let Ok(summary) =
-                openai::compress_old_messages(&client, &api_key, &mini_model, &old_pairs).await
+                openai::compress_old_messages(&client, &api_key_fallback, &mini_model, &old_pairs).await
             {
                 {
                     let conn = db.0.lock().map_err(|e| e.to_string())?;
@@ -569,28 +583,42 @@ async fn send_session_message(
     } else {
         rag_context.clone()
     };
-    let mut reply = openai::chat_teacher_reply_with_context(
-        &client,
-        &api_key,
-        &model,
-        if is_selection_mode { sel_latex.as_deref() } else { None },
-        if !is_selection_mode && !rag_context.is_empty() { Some(rag_context.as_str()) } else { None },
-        memory_context.as_deref(),
-        sel_text.as_deref(),
-        &history,
-        &normalized,
-    )
-    .await?;
+
+    let mut reply = if let Some(ref token) = chatgpt_token {
+        // ── ChatGPT セッション経由 ──
+        let system_prompt = build_teacher_system_prompt(
+            sel_latex.as_deref(),
+            if !is_selection_mode && !rag_context.is_empty() { Some(rag_context.as_str()) } else { None },
+            memory_context.as_deref(),
+            sel_text.as_deref(),
+        );
+        chatgpt_session::chat_completion(&client, token, &system_prompt, &history, &normalized)
+            .await?
+    } else {
+        // ── OpenAI API 直接 ──
+        openai::chat_teacher_reply_with_context(
+            &client,
+            &api_key_fallback,
+            &model,
+            if is_selection_mode { sel_latex.as_deref() } else { None },
+            if !is_selection_mode && !rag_context.is_empty() { Some(rag_context.as_str()) } else { None },
+            memory_context.as_deref(),
+            sel_text.as_deref(),
+            &history,
+            &normalized,
+        )
+        .await?
+    };
     emit_agent_status(&app, "main_agent", "done", "");
 
-    // ── Step 7: Adversarial Agent（thinking ON 時のみ）──
-    if thinking_enabled {
+    // ── Step 7: Adversarial Agent（thinking ON かつ OpenAI APIキーあり時）──
+    if thinking_enabled && util_api_key.is_some() {
         emit_agent_status(&app, "adversarial", "running", "回答を検証中");
         let mut adversarial_detail = "問題なし";
         for _ in 0..2 {
             match openai::adversarial_check(
                 &client,
-                &api_key,
+                &api_key_fallback,
                 &mini_model,
                 &reply,
                 &context_latex_for_adv,
@@ -811,6 +839,106 @@ async fn prefetch_pages(
     Ok(())
 }
 
+/// ChatGPT用のシステムプロンプトを構築
+fn build_teacher_system_prompt(
+    sel_latex: Option<&str>,
+    rag_context: Option<&str>,
+    memory_context: Option<&str>,
+    sel_text: Option<&str>,
+) -> String {
+    let mut prompt = String::from(
+        "あなたは数学の家庭教師です。日本語で、丁寧にわかりやすく教えてください。\
+        数式はLaTeX記法（$...$ または $$...$$）で書いてください。",
+    );
+    if let Some(text) = sel_text.filter(|s| !s.is_empty()) {
+        prompt.push_str(&format!("\n\n【ユーザーが選択したテキスト】\n{text}"));
+    }
+    if let Some(latex) = sel_latex.filter(|s| !s.is_empty()) {
+        prompt.push_str(&format!("\n\n【対応するLaTeX】\n{latex}"));
+    }
+    if let Some(rag) = rag_context.filter(|s| !s.is_empty()) {
+        prompt.push_str(&format!("\n\n【教科書の関連ページ（RAG）】\n{rag}"));
+    }
+    if let Some(mem) = memory_context.filter(|s| !s.is_empty()) {
+        prompt.push_str(&format!("\n\n【過去の解説（記憶）】\n{mem}"));
+    }
+    prompt
+}
+
+// ──────────────────────────────────────────────
+// ChatGPT セッション管理コマンド
+// ──────────────────────────────────────────────
+
+#[tauri::command]
+async fn open_chatgpt_login(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    // PKCE生成
+    let verifier = chatgpt_session::generate_code_verifier();
+    let challenge = chatgpt_session::generate_code_challenge(&verifier);
+    let state = chatgpt_session::generate_state();
+
+    // コールバックサーバーをバインド
+    let (listener, port) = chatgpt_session::bind_callback_listener()?;
+    let auth_url = chatgpt_session::build_auth_url(&challenge, &state, port);
+
+    // システムブラウザを開く
+    app.opener()
+        .open_url(&auth_url, None::<&str>)
+        .map_err(|e| e.to_string())?;
+
+    // バックグラウンドでコールバック待機 → トークン交換 → 保存
+    let app_bg = app.clone();
+    tauri::async_runtime::spawn(async move {
+        chatgpt_session::complete_oauth_flow(app_bg, listener, port, verifier, state).await;
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn logout_chatgpt(app: tauri::AppHandle) -> Result<(), String> {
+    chatgpt_session::clear_access_token(&app);
+    Ok(())
+}
+
+#[tauri::command]
+fn get_settings(app: tauri::AppHandle) -> serde_json::Value {
+    let chatgpt_logged_in = chatgpt_session::load_access_token(&app).is_some();
+    let has_vision_key = chatgpt_session::load_vision_api_key(&app).is_some();
+    serde_json::json!({
+        "chatgptLoggedIn": chatgpt_logged_in,
+        "hasVisionKey": has_vision_key,
+    })
+}
+
+#[tauri::command]
+fn save_vision_api_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    chatgpt_session::save_vision_api_key(&app, key);
+    Ok(())
+}
+
+#[tauri::command]
+fn list_books(state: tauri::State<'_, DbState>) -> Result<Vec<serde_json::Value>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::list_books(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_book(book_id: String, state: tauri::State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::delete_book_cascade(&conn, &book_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_resolved_sessions(
+    book_id: String,
+    state: tauri::State<'_, DbState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    db::list_resolved_sessions(&conn, &book_id).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn branch_session_cmd(
     parent_id: String,
@@ -893,6 +1021,13 @@ pub fn run() {
             finalize_session_memory,
             memory_search,
             prefetch_pages,
+            list_books,
+            delete_book,
+            list_resolved_sessions,
+            open_chatgpt_login,
+            logout_chatgpt,
+            get_settings,
+            save_vision_api_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

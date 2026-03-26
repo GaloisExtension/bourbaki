@@ -1,66 +1,35 @@
-# Phase 5 実装タスク
+# Phase 6 実装タスク: UX 仕上げ
 
-## バックエンド (Rust)
+## 確認済み（実装済み）
+- [x] KaTeX レンダリング（MathMessage.tsx, ChatNode.tsx）
+- [x] キャンバスのズーム・パン・ミニマップ（FlowCanvas.tsx）
 
-### db.rs 追加クエリ
-- [x] `pages_fts_ranked_ids` - pagesテーブルへのFTS5検索
-- [x] `list_page_rows_for_rag` - RAG用ページ一覧（embedding付き）
-- [x] `get_pages_by_nums` - ページ番号指定でLaTeX取得
-- [x] `concepts_by_page_nums` - ページの概念ノード取得
-- [x] `concept_deps_expand` - GraphRAGグラフ探索（依存関係辿り）
-- [x] `get_concepts_by_ids` - 概念IDから概念取得
-- [x] `compress_messages` - コンテキスト圧縮DB更新
-- [x] `list_message_pairs_with_ids` - ID付きメッセージ一覧
-- [x] `estimate_message_tokens` - トークン数推定
+## 1. 解決済みセッション一覧パネル
+- [ ] `src/components/ResolvedPanel/ResolvedPanel.tsx` 作成
+  - 右サイドバーとして折りたたみ可能
+  - resolved=1 のセッション一覧を表示
+  - 各セッション: ページ番号・選択テキスト・解説サマリー・作成日時
+  - クリックでキャンバス上の対象ノードをフォーカス
+  - セッションを検索できる（フィルター入力）
+  - 解決済み → 未解決に戻すボタン
+- [ ] `src/api/commands.ts` に `listResolvedSessions` 追加
+- [ ] `src-tauri/src/lib.rs` に `list_resolved_sessions` コマンド追加
+- [ ] FlowCanvas と連携（選択ノードへスクロール）
 
-### openai.rs 追加関数
-- [x] `chat_teacher_reply_with_context` - RAG/Memory コンテキスト対応チューター
-- [x] `adversarial_check` - 回答草案の数学的厳密さチェック
-- [x] `compress_old_messages` - コンテキスト圧縮
+## 2. 教科書（本）管理画面
+- [ ] `src/components/BookManager/BookManager.tsx` 作成
+  - モーダルダイアログ形式
+  - 登録済み書籍一覧（book_id, pdf_path, page_count, 取り込み状況）
+  - 書籍を選択して切り替え（setBookId）
+  - 書籍を削除（DB から pages/sessions/concepts を削除）
+  - 新規書籍追加（= PDF を開く）
+- [ ] `src-tauri/src/lib.rs` に必要なコマンド追加
+  - `list_books` → books テーブル一覧
+  - `delete_book` → 書籍と関連データを削除
+- [ ] `src-tauri/src/db.rs` に `list_books`, `delete_book_cascade` 追加
+- [ ] App.tsx にモーダルトリガーボタン追加
 
-### lib.rs 更新
-- [x] `send_session_message` 全面更新 - エージェントオーケストレーション + `agent-status` イベント
-  - 選択あり/なし自動判定
-  - RAG Agent (自由質問時) + GraphRAG展開
-  - Memory Agent (過去解説3件)
-  - Context Agent (Memory + RAG → システムプロンプト注入)
-  - Adversarial Agent (回答草案チェック、thinking ON 時のみ)
-  - Context Compression (履歴6000トークン超で自動圧縮)
-- [x] `run_rag_hybrid` - FTS5+ベクトルRRF (pages用)
-- [x] `emit_agent_status` ヘルパー
-- [x] `prefetch_pages` 新コマンド - 選択時に周辺ページを先読み
-- [x] invoke_handler に prefetch_pages 登録
-
-## フロントエンド (React)
-
-### AgentPanel コンポーネント
-- [x] `src/components/AgentPanel/AgentPanel.tsx` 作成
-  - 送信中のノードにリアルタイムエージェントステータス表示
-  - 完了後はサマリー表示に切り替え
-  - クリックで詳細展開
-
-### Store 更新
-- [x] `agentStatuses: AgentStatus[]` 追加
-- [x] `compressedSessions: string[]` 追加
-- [x] `updateAgentStatus`, `clearAgentStatuses`, `addCompressedSession` アクション追加
-
-### commands.ts 追加
-- [x] `prefetchPages(bookId, centerPage)` ラッパー
-
-### App.tsx 更新
-- [x] `agent-status` イベントリスナー → ストア更新
-- [x] `compression-done` イベントリスナー
-- [x] 選択時に `prefetchPages` 呼び出し
-
-### ChatNode.tsx 更新
-- [x] AgentPanel をメッセージ一覧の下に表示
-
-### FlowCanvas.tsx 更新
-- [x] 送信開始時に `clearAgentStatuses` 呼び出し
-- [x] 送信中のセッションにのみ `agentStatuses` を渡す
-
-## テスト
-- [ ] text_linear_algebra.pdf で自由質問 (RAG) テスト
-- [ ] Adversarial Agent の動作確認
-- [ ] Context Compression の動作確認
-- [ ] Agent Transparency Panel の表示確認
+## 3. UX 細部改善
+- [ ] 解決済みノードの視覚的区別（緑枠・✅バッジ）→ chat-node.css 更新
+- [ ] 圧縮済みメッセージの「展開」ボタン UI（is_compressed=1 のメッセージ）
+- [ ] ヘッダーのトークン使用量バーを実際の値に接続（現在はモック）

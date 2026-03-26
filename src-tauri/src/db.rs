@@ -140,6 +140,84 @@ pub fn upsert_book(
     Ok(())
 }
 
+pub fn list_books(conn: &Connection) -> SqlResult<Vec<serde_json::Value>> {
+    let mut stmt = conn.prepare(
+        "SELECT b.id, b.pdf_path, b.page_count, b.created_at,
+                COUNT(DISTINCT p.page_num) AS indexed_pages,
+                COUNT(DISTINCT CASE WHEN p.embedding IS NOT NULL AND length(p.embedding) >= 16 THEN p.page_num END) AS embedded_pages
+         FROM books b
+         LEFT JOIN pages p ON p.book_id = b.id
+         GROUP BY b.id
+         ORDER BY b.created_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(serde_json::json!({
+            "id": row.get::<_, String>(0)?,
+            "pdfPath": row.get::<_, String>(1)?,
+            "pageCount": row.get::<_, Option<i32>>(2)?,
+            "createdAt": row.get::<_, i64>(3)?,
+            "indexedPages": row.get::<_, i64>(4)?,
+            "embeddedPages": row.get::<_, i64>(5)?,
+        }))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+pub fn delete_book_cascade(conn: &Connection, book_id: &str) -> SqlResult<()> {
+    // 関連するすべてのデータを削除（外部キーはOFFのため手動で削除）
+    conn.execute("DELETE FROM concept_edges WHERE from_id IN (SELECT id FROM concepts WHERE book_id = ?1)", params![book_id])?;
+    conn.execute("DELETE FROM concept_edges WHERE to_id IN (SELECT id FROM concepts WHERE book_id = ?1)", params![book_id])?;
+    conn.execute("DELETE FROM concepts WHERE book_id = ?1", params![book_id])?;
+    // messages → sessions の順で削除
+    conn.execute(
+        "DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE book_id = ?1)",
+        params![book_id],
+    )?;
+    conn.execute(
+        "DELETE FROM resolved_explanations WHERE book_id = ?1",
+        params![book_id],
+    )?;
+    conn.execute("DELETE FROM sessions WHERE book_id = ?1", params![book_id])?;
+    conn.execute("DELETE FROM pages WHERE book_id = ?1", params![book_id])?;
+    conn.execute("DELETE FROM books WHERE id = ?1", params![book_id])?;
+    Ok(())
+}
+
+pub fn list_resolved_sessions(
+    conn: &Connection,
+    book_id: &str,
+) -> SqlResult<Vec<serde_json::Value>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.id, s.page_num, s.selection_text, s.selection_latex, s.created_at,
+                re.summary, re.created_at as resolved_at
+         FROM sessions s
+         LEFT JOIN resolved_explanations re ON re.session_id = s.id
+         WHERE s.book_id = ?1 AND s.resolved = 1
+         ORDER BY s.created_at DESC
+         LIMIT 200",
+    )?;
+    let rows = stmt.query_map(params![book_id], |row| {
+        Ok(serde_json::json!({
+            "id": row.get::<_, String>(0)?,
+            "pageNum": row.get::<_, Option<i32>>(1)?,
+            "selectionText": row.get::<_, Option<String>>(2)?,
+            "selectionLatex": row.get::<_, Option<String>>(3)?,
+            "createdAt": row.get::<_, i64>(4)?,
+            "summary": row.get::<_, Option<String>>(5)?,
+            "resolvedAt": row.get::<_, Option<i64>>(6)?,
+        }))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
 pub fn upsert_page_latex(
     conn: &Connection,
     book_id: &str,

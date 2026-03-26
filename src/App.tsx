@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import "./App.css";
 import { PdfViewer } from "./components/PdfViewer/PdfViewer";
 import { FlowCanvas } from "./components/Canvas/FlowCanvas";
+import { BookManager } from "./components/BookManager/BookManager";
+import { ResolvedPanel } from "./components/ResolvedPanel/ResolvedPanel";
+import { Settings } from "./components/Settings/Settings";
 import { useAppStore } from "./store/appStore";
 import {
   cancelPdfIngest,
@@ -35,8 +38,13 @@ function App() {
   const selectionPageForMap = useAppStore((s) => s.selectionPage);
   const dbPathHint = useAppStore((s) => s.dbPathHint);
   const pdfPath = useAppStore((s) => s.pdfPath);
+  const setBookId = useAppStore((s) => s.setBookId);
   const updateAgentStatus = useAppStore((s) => s.updateAgentStatus);
   const addCompressedSession = useAppStore((s) => s.addCompressedSession);
+
+  const [showBookManager, setShowBookManager] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const focusSessionRef = useRef<((sessionId: string) => void) | null>(null);
 
   const [ingestBusy, setIngestBusy] = useState(false);
   const [ingestLine, setIngestLine] = useState<string | null>(null);
@@ -57,6 +65,7 @@ function App() {
       .then((p) => setDbPathHint(p.dbPath))
       .catch(console.error);
   }, [setDbPathHint]);
+
 
   const refreshPageIndex = useCallback(() => {
     if (!bookId) return;
@@ -207,6 +216,16 @@ function App() {
     setIngestLine(null);
   }, [setPdf]);
 
+  const handleSelectBook = useCallback(
+    (id: string, path: string) => {
+      setBookId(id);
+      setPdf(path, convertFileSrc(path));
+      setIngestError(null);
+      setIngestLine(null);
+    },
+    [setBookId, setPdf],
+  );
+
   const runIngest = useCallback(async () => {
     if (!pdfPath || ingestBusy) return;
     setIngestError(null);
@@ -276,11 +295,26 @@ function App() {
           <div>
             <div className="app-brand__title">Math Teacher</div>
             <div className="app-brand__sub">
-              Phase 5: RAG + Context + Adversarial + 透明性UI
+              Phase 6: 解決済み一覧 + 教科書管理
             </div>
           </div>
         </div>
         <div className="app-toolbar">
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setShowSettings(true)}
+            title="ChatGPTログイン・APIキー設定"
+          >
+            ⚙ 設定
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setShowBookManager(true)}
+          >
+            教科書管理
+          </button>
           <button type="button" className="btn btn--ghost" onClick={openPdf}>
             PDFを開く
           </button>
@@ -405,10 +439,25 @@ function App() {
             onSelectionChange={(t, p) => setSelection(t, p)}
           />
         </section>
-        <section className="pane pane--flow">
-          <FlowCanvas />
+        <section className="pane pane--flow" style={{ position: "relative" }}>
+          <FlowCanvas onRegisterFocusSession={(fn) => { focusSessionRef.current = fn; }} />
+          <ResolvedPanel
+            bookId={bookId}
+            onFocusSession={(sessionId) => focusSessionRef.current?.(sessionId)}
+          />
         </section>
       </main>
+      {showSettings && (
+        <Settings onClose={() => setShowSettings(false)} />
+      )}
+      {showBookManager && (
+        <BookManager
+          currentBookId={bookId}
+          onSelectBook={handleSelectBook}
+          onAddBook={openPdf}
+          onClose={() => setShowBookManager(false)}
+        />
+      )}
     </div>
   );
 }
